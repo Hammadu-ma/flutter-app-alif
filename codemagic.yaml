@@ -1,0 +1,104 @@
+workflows:
+  android-workflow:
+    name: Alif Med - Android
+    max_build_duration: 30
+    environment:
+      flutter: stable
+    scripts:
+      - name: Force correct Gradle wrapper + AGP version + launcher icons
+        script: |
+          mkdir -p android/gradle/wrapper
+          cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
+          networkTimeout=10000
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          sed -i.bak "s/classpath 'com.android.tools.build:gradle:[^']*'/classpath 'com.android.tools.build:gradle:8.11.1'/" android/build.gradle
+          sed -i.bak "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '2.2.20'/" android/build.gradle
+          rm -f android/build.gradle.bak
+          cat > android/app/build.gradle << 'EOF'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "dev.flutter.flutter-gradle-plugin"
+          }
+
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) {
+              flutterVersionCode = '1'
+          }
+
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) {
+              flutterVersionName = '1.0.0'
+          }
+
+          android {
+              namespace "com.alifmed.app"
+              compileSdk 36
+              ndkVersion flutter.ndkVersion
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
+              defaultConfig {
+                  applicationId "com.alifmed.app"
+                  minSdkVersion 21
+                  targetSdkVersion 36
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+                  ndk {
+                      abiFilters "arm64-v8a", "armeabi-v7a"
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+
+          flutter {
+              source '../..'
+          }
+          EOF
+          if [ -f android/gradlew ]; then
+            sed -i.bak "s/DEFAULT_JVM_OPTS=.*/DEFAULT_JVM_OPTS=\"-Xmx64m -Xms64m\"/" android/gradlew
+            rm -f android/gradlew.bak
+            chmod +x android/gradlew
+          fi
+          cat android/gradle/wrapper/gradle-wrapper.properties
+          grep classpath android/build.gradle
+          grep -A1 compileSdk android/app/build.gradle
+          grep abiFilters android/app/build.gradle
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Build APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk

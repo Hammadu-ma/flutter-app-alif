@@ -1,0 +1,46 @@
+name: alif_meta_app
+description: "ALIF Meta - Mobile app wrapper for alifmeta.vercel.app"
+publish_to: 'none'
+version: 1.1.0+2
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: ^4.7.0
+  connectivity_plus: ^6.0.5
+  shared_preferences: ^2.3.2
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
+# Run: flutter pub run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#F4F7F5"
+  adaptive_icon_foreground: "assets/app_icon_foreground.png"
+
+# Run: flutter pub run flutter_native_splash:create
+# image is the transparent, safe-zone-padded mark so it centers cleanly
+# on both the classic splash and the Android 12+ splash circle.
+flutter_native_splash:
+  color: "#F4F7F5"
+  image: assets/splash_logo.png
+  android_12:
+    color: "#F4F7F5"
+    image: assets/splash_logo.png
+    icon_background_color: "#F4F7F5"
