@@ -11,6 +11,9 @@ A lightweight Flutter wrapper for **alifmeta.vercel.app**, built to feel like a 
 - Android back button navigates within the site (not straight out of the app)
 - Fast startup, minimal dependencies
 
+## v1.1.1 fix — system theme (dark mode) stopped working
+Your site already supports `prefers-color-scheme` in CSS, but Android WebView silently ignores that media query for any app targeting Android 13 (API 33) or higher — unless "algorithmic darkening" is turned on explicitly, per WebView instance, from native code. There's no Dart-level API for this in `webview_flutter`, so it's now set natively in `android/.../MainActivity.kt`: it watches the view tree for the WebView and enables `WebSettingsCompat.setAlgorithmicDarkeningAllowed(...)` on it as soon as it appears. This needed a new `androidx.webkit` dependency, added to both `android/app/build.gradle` and the Codemagic build script so it applies whether you build locally or on CI. Your site's system-theme support should follow the device's light/dark setting again.
+
 ## What changed in this update (v1.1.0)
 - **Real logo everywhere** — the provided ALIF mark now drives the splash screen, the Flutter loading overlay, and the Android launcher icon (both the classic square icon and a proper adaptive icon with a transparent, safe-zone-padded foreground layer). All of the generated PNG/XML resources are already baked into `android/app/src/main/res/`, so this works even without re-running the icon/splash generator tools.
 - **Faster, non-blocking splash** — the OS-level native splash (`android/.../values-v31/styles.xml`, Android 12+ Splash Screen API) now shows the logo immediately, and the in-app loading screen crossfades out instead of cutting away abruptly. A first load that's taking a while shows a small "still on it" hint instead of looking frozen.

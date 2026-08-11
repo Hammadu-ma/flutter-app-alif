@@ -86,6 +86,10 @@ workflows:
           flutter {
               source '../..'
           }
+
+          dependencies {
+              implementation "androidx.webkit:webkit:1.12.1"
+          }
           EOF
           if [ -f android/gradlew ]; then
             sed -i.bak "s/DEFAULT_JVM_OPTS=.*/DEFAULT_JVM_OPTS=\"-Xmx64m -Xms64m\"/" android/gradlew

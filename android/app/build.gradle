@@ -67,3 +67,9 @@ android {
 flutter {
     source '../..'
 }
+
+dependencies {
+    // Needed natively (MainActivity.kt) to let the WebView honor the site's
+    // prefers-color-scheme / system theme on Android 13+.
+    implementation "androidx.webkit:webkit:1.12.1"
+}
