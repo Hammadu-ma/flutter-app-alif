@@ -68,7 +68,18 @@ class _WebViewHomeState extends State<WebViewHome>
   bool _isNavigating = false;
 
   bool _hasError = false;
-  bool _isOffline = false;
+
+  // Raw signal from the OS: is there a network connection right now?
+  // This alone must NEVER hide the currently-loaded page — a page that's
+  // already rendered in the WebView keeps working fine after data is
+  // switched off, exactly like a normal browser tab does.
+  bool _networkOffline = false;
+
+  // What actually drives the offline screen in the UI. Only set to true
+  // when a real navigation attempt has nothing to fall back on — never
+  // just because the network dropped while a page was already showing.
+  bool _showOfflineScreen = false;
+
   bool _showSlowHint = false;
 
   bool _controllerLoaded = false; // has loadRequest ever actually fired?
@@ -98,17 +109,17 @@ class _WebViewHomeState extends State<WebViewHome>
     _hasLoadedOnce = prefs.getBool(_kPrefHasLoadedOnce) ?? false;
 
     final results = await Connectivity().checkConnectivity();
-    _isOffline = results.every((r) => r == ConnectivityResult.none);
+    _networkOffline = results.every((r) => r == ConnectivityResult.none);
 
     _connSub = Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
 
-    if (_isOffline && !_hasLoadedOnce) {
+    if (_networkOffline && !_hasLoadedOnce) {
       // Nothing has ever been cached and there's no network right now —
       // don't waste time spinning, go straight to the offline screen.
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _isOffline = true;
+          _showOfflineScreen = true;
         });
       }
       return;
@@ -122,10 +133,15 @@ class _WebViewHomeState extends State<WebViewHome>
     _connDebounce?.cancel();
     _connDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      final wasOffline = _isOffline;
-      setState(() => _isOffline = offline);
-      if (wasOffline && !offline) {
-        // Connection came back — bring the app back to life automatically.
+      // Just record the raw signal — do NOT touch the UI here. A page
+      // that's already loaded and on screen keeps working fine; there is
+      // nothing to "go offline" from. This only matters the next time a
+      // navigation is attempted, and for auto-retrying below.
+      final wasOffline = _networkOffline;
+      _networkOffline = offline;
+      if (wasOffline && !offline && _showOfflineScreen) {
+        // We were genuinely showing the offline screen and the connection
+        // just came back — bring the app back to life automatically.
         _startLoadIfNeeded();
       }
     });
@@ -157,6 +173,10 @@ class _WebViewHomeState extends State<WebViewHome>
             if (!mounted) return;
             setState(() {
               _hasError = false;
+              // A real navigation is happening and about to either succeed
+              // or fail on its own merits — clear any previous offline
+              // screen so it doesn't linger under/behind the new attempt.
+              _showOfflineScreen = false;
               if (_isFirstLoad) {
                 _isLoading = true;
               } else {
@@ -174,6 +194,7 @@ class _WebViewHomeState extends State<WebViewHome>
               _isLoading = false;
               _isNavigating = false;
               _showSlowHint = false;
+              _showOfflineScreen = false;
             });
             _isFirstLoad = false;
             if (!_hasLoadedOnce) {
@@ -193,10 +214,13 @@ class _WebViewHomeState extends State<WebViewHome>
               _isLoading = false;
               _isNavigating = false;
               _showSlowHint = false;
-              // If we already know there's no network, this is the offline
-              // state, not a "real" app error — only show the generic error
-              // screen when we believe we're actually online.
-              if (!_isOffline) {
+              // A navigation just genuinely failed. If there's no network,
+              // that's the offline state — and it means this particular
+              // page/request has nothing usable cached for it. If we think
+              // we're online, it's a real app error instead.
+              if (_networkOffline) {
+                _showOfflineScreen = true;
+              } else {
                 _hasError = true;
               }
             });
@@ -239,13 +263,13 @@ class _WebViewHomeState extends State<WebViewHome>
     // If we're offline but attempting to load anyway (because something may
     // be cached), and nothing renders in a reasonable time, fall back to the
     // offline screen instead of spinning forever.
-    if (_isOffline) {
+    if (_networkOffline) {
       _offlineFallbackTimer = Timer(const Duration(seconds: 6), () {
         if (mounted && (_isLoading || _isNavigating)) {
           setState(() {
             _isLoading = false;
             _isNavigating = false;
-            _isOffline = true;
+            _showOfflineScreen = true;
           });
         }
       });
@@ -298,9 +322,14 @@ class _WebViewHomeState extends State<WebViewHome>
   Future<void> _retryFromOffline() async {
     final results = await Connectivity().checkConnectivity();
     final offline = results.every((r) => r == ConnectivityResult.none);
-    if (mounted) setState(() => _isOffline = offline);
+    _networkOffline = offline;
     if (!offline) {
+      if (mounted) setState(() => _showOfflineScreen = false);
       await _startLoadIfNeeded();
+    } else if (mounted) {
+      // Still genuinely offline — nudge the UI so the button feels
+      // responsive even though nothing changed yet.
+      setState(() {});
     }
   }
 
@@ -326,7 +355,8 @@ class _WebViewHomeState extends State<WebViewHome>
 
   @override
   Widget build(BuildContext context) {
-    final showFullOverlay = _isFirstLoad && _isLoading && !_hasError && !_isOffline;
+    final showFullOverlay =
+        _isFirstLoad && _isLoading && !_hasError && !_showOfflineScreen;
 
     return PopScope(
       canPop: false,
@@ -346,7 +376,7 @@ class _WebViewHomeState extends State<WebViewHome>
               duration: const Duration(milliseconds: 260),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
-              child: _isOffline
+              child: _showOfflineScreen
                   ? _OfflineView(key: const ValueKey('offline'), onRetry: _retryFromOffline)
                   : _hasError
                       ? _ErrorView(key: const ValueKey('error'), onRetry: _reload)
