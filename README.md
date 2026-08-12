@@ -11,6 +11,9 @@ A lightweight Flutter wrapper for **alifmeta.vercel.app**, built to feel like a 
 - Android back button navigates within the site (not straight out of the app)
 - Fast startup, minimal dependencies
 
+## v1.1.2 — ECG loading animation
+The plain progress bar on the first-load screen is now a small, centered, quick ECG (heartbeat) trace — it draws itself left to right, beat after beat, in a continuous loop (`_EcgLoader` / `_EcgPainter` in `lib/main.dart`). It's purely decorative/indeterminate rather than tied to literal load percentage, which keeps it feeling snappy regardless of connection speed. The slim top bar used for in-app navigation is unchanged.
+
 ## v1.1.1 fix — system theme (dark mode) stopped working
 Your site already supports `prefers-color-scheme` in CSS, but Android WebView silently ignores that media query for any app targeting Android 13 (API 33) or higher — unless "algorithmic darkening" is turned on explicitly, per WebView instance, from native code. There's no Dart-level API for this in `webview_flutter`, so it's now set natively in `android/.../MainActivity.kt`: it watches the view tree for the WebView and enables `WebSettingsCompat.setAlgorithmicDarkeningAllowed(...)` on it as soon as it appears. This needed a new `androidx.webkit` dependency, added to both `android/app/build.gradle` and the Codemagic build script so it applies whether you build locally or on CI. Your site's system-theme support should follow the device's light/dark setting again.
 

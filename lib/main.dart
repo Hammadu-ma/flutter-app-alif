@@ -407,7 +407,6 @@ class _WebViewHomeState extends State<WebViewHome>
                   duration: const Duration(milliseconds: 320),
                   curve: Curves.easeOut,
                   child: _LoadingOverlay(
-                    progress: _loadProgress,
                     pulse: _pulseController,
                     showSlowHint: _showSlowHint,
                   ),
@@ -499,13 +498,147 @@ class _TopProgressBar extends StatelessWidget {
   }
 }
 
+/// A small, centered, quick ECG (heartbeat) trace that draws itself in a
+/// continuous loop — one beat after another — instead of a plain loading
+/// bar. Purely decorative/indeterminate; it doesn't track real progress.
+class _EcgLoader extends StatefulWidget {
+  const _EcgLoader({this.width = 150, this.height = 46});
+
+  final double width;
+  final double height;
+
+  @override
+  State<_EcgLoader> createState() => _EcgLoaderState();
+}
+
+class _EcgLoaderState extends State<_EcgLoader> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => CustomPaint(
+          size: Size(widget.width, widget.height),
+          painter: _EcgPainter(progress: _controller.value),
+        ),
+      ),
+    );
+  }
+}
+
+class _EcgPainter extends CustomPainter {
+  final double progress; // 0..1, loops continuously
+
+  _EcgPainter({required this.progress});
+
+  // A single stylised PQRST heartbeat cycle, as fractions of the drawing
+  // box (x: 0..1 across one beat, y: -1..1 where positive is "up").
+  static const List<List<double>> _beat = [
+    [0.00, 0.0],
+    [0.10, 0.0],
+    [0.13, 0.22], // P wave
+    [0.16, 0.0],
+    [0.32, 0.0],
+    [0.35, -0.12], // Q dip
+    [0.37, 1.0], // R spike
+    [0.39, -0.5], // S dip
+    [0.42, 0.0],
+    [0.56, 0.0],
+    [0.60, 0.40], // T wave
+    [0.64, 0.0],
+    [1.00, 0.0],
+  ];
+
+  static const int _beatsAcross = 2;
+
+  Path _buildPath(Size size) {
+    final path = Path();
+    double xAt(double f) => f * size.width;
+    double yAt(double up) => size.height * 0.62 - up * size.height * 0.46;
+
+    for (int b = 0; b < _beatsAcross; b++) {
+      final offset = b / _beatsAcross;
+      const scale = 1 / _beatsAcross;
+      for (int i = 0; i < _beat.length; i++) {
+        final px = xAt(offset + _beat[i][0] * scale);
+        final py = yAt(_beat[i][1]);
+        if (b == 0 && i == 0) {
+          path.moveTo(px, py);
+        } else {
+          path.lineTo(px, py);
+        }
+      }
+    }
+    return path;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildPath(size);
+
+    // Reveal the trace left-to-right as progress goes 0 -> 1, then it
+    // snaps back and draws again — "one beat after another".
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width * progress, size.height));
+
+    final glowPaint = Paint()
+      ..color = kAccent.withOpacity(0.32)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawPath(path, glowPaint);
+
+    final linePaint = Paint()
+      ..color = kAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.3
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, linePaint);
+    canvas.restore();
+
+    // A small glowing tip at the leading edge, like a monitor's pen.
+    final metrics = path.computeMetrics().toList();
+    if (metrics.isNotEmpty && progress > 0.01 && progress < 1) {
+      final metric = metrics.first;
+      final tangent = metric.getTangentForOffset(metric.length * progress);
+      if (tangent != null) {
+        canvas.drawCircle(tangent.position, 6, Paint()..color = kAccent.withOpacity(0.20));
+        canvas.drawCircle(tangent.position, 2.4, Paint()..color = kAccent);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _EcgPainter oldDelegate) => oldDelegate.progress != progress;
+}
+
 class _LoadingOverlay extends StatelessWidget {
-  final double progress;
   final Animation<double> pulse;
   final bool showSlowHint;
 
   const _LoadingOverlay({
-    required this.progress,
     required this.pulse,
     required this.showSlowHint,
   });
@@ -545,24 +678,8 @@ class _LoadingOverlay extends StatelessWidget {
               },
               child: Image.asset('assets/splash_logo.png', width: 108, height: 108),
             ),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: 140,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: progress.clamp(0, 1)),
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOut,
-                  builder: (context, value, _) => LinearProgressIndicator(
-                    value: value > 0 ? value : null,
-                    minHeight: 3,
-                    backgroundColor: kBrandDark.withOpacity(0.08),
-                    valueColor: const AlwaysStoppedAnimation<Color>(kAccent),
-                  ),
-                ),
-              ),
-            ),
+            const SizedBox(height: 22),
+            const _EcgLoader(),
             const SizedBox(height: 18),
             AnimatedOpacity(
               opacity: showSlowHint ? 1 : 0,
